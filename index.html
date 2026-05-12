@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="تطبيق عداد ذكي يعمل بدون إنترنت" />
+
+  <title>TallyOne</title>
+
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Distinctive pairing — Cairo (Arabic display) + JetBrains Mono (numbers) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=JetBrains+Mono:wght@300;700&display=swap" rel="stylesheet" />
+
+  <script>
+    // Tailwind dark mode + custom config
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            cairo: ['Cairo', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            slate: {
+              950: '#020617',
+            }
+          },
+          animation: {
+            'pop': 'pop 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            'fade-in': 'fadeIn 0.3s ease-out',
+            'slide-up': 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          },
+          keyframes: {
+            pop: {
+              '0%': { transform: 'scale(0.92)' },
+              '100%': { transform: 'scale(1)' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { opacity: '0', transform: 'translateY(16px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* Base styles */
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Cairo', sans-serif;
+      background: #0f172a;
+      min-height: 100dvh;
+    }
+
+    /* Counter number — monospace for mechanical feel */
+    #counter-display {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  color 0.2s ease;
+    }
+
+    #counter-display.bump {
+      animation: pop 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* Btn press feedback */
+    .btn-counter:active {
+      transform: scale(0.93);
+    }
+
+    /* Scrollbar styling */
+    #history-list::-webkit-scrollbar { width: 4px; }
+    #history-list::-webkit-scrollbar-track { background: transparent; }
+    #history-list::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 99px;
+    }
+
+    /* Category pill active state */
+    .category-pill.active {
+      background: #6366f1;
+      color: #fff;
+      border-color: #6366f1;
+    }
+
+    /* Smooth tab transition */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeIn 0.25s ease-out; }
+
+    /* Subtle grid texture on header */
+    .header-bg {
+      background-color: #0f172a;
+      background-image:
+        linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    /* Glow on counter area */
+    .counter-glow {
+      box-shadow:
+        0 0 0 1px rgba(99,102,241,0.15),
+        0 0 60px rgba(99,102,241,0.08),
+        inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    /* History card hover */
+    .history-card {
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .history-card:hover {
+      transform: translateX(-3px);
+      box-shadow: 3px 0 0 0 #6366f1 inset;
+    }
+  </style>
+</head>
+
+<body class="font-cairo text-slate-100 antialiased">
+
+  <!-- ══════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════ -->
+  <header class="header-bg border-b border-slate-800 sticky top-0 z-30 backdrop-blur-sm">
+    <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
+      <!-- Logo + Title -->
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
+          </svg>
+        </div>
+        <span class="font-bold text-slate-100 text-base tracking-tight">TallyOne</span>
+      </div>
+
+      <!-- Theme Toggle + Install Btn -->
+      <div class="flex items-center gap-2">
+        <!-- PWA Install Button (hidden until prompt available) -->
+        <button id="btn-install"
+          class="hidden items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                 rounded-lg border border-indigo-500/40 text-indigo-300
+                 hover:bg-indigo-500/10 transition-colors"
+          aria-label="تثبيت التطبيق">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          تثبيت
+        </button>
+
+        <!-- Dark/Light toggle -->
+        <button id="btn-theme"
+          class="w-8 h-8 rounded-lg border border-slate-700 bg-slate-800/60 flex items-center justify-center
+                 hover:border-slate-600 transition-colors"
+          aria-label="تبديل المظهر">
+          <svg id="icon-moon" class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/>
+          </svg>
+          <svg id="icon-sun" class="w-4 h-4 text-amber-400 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+  <!-- ══════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════ -->
+  <main class="max-w-xl mx-auto px-4 pb-24 pt-6 space-y-5">
+
+    <!-- ── TAB SWITCHER ────────────────── -->
+    <div class="flex gap-1 p-1 bg-slate-800/60 rounded-xl border border-slate-700/50">
+      <button id="tab-counter"
+        class="tab-btn flex-1 py-2 text-sm font-semibold rounded-lg transition-all
+               bg-slate-700 text-slate-100 shadow-sm"
+        data-tab="counter"
+        aria-selected="true">
+        العداد
+      </button>
+      <button id="tab-history"
+        class="tab-btn flex-1 py-2 text-sm font-semibold rounded-lg transition-all
+               text-slate-400 hover:text-slate-200"
+        data-tab="history"
+        aria-selected="false">
+        السجل
+        <span id="history-badge"
+          class="mr-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px]
+                 font-bold rounded-full bg-indigo-500/20 text-indigo-300 hidden">
+          0
+        </span>
+      </button>
+    </div>
+
+
+    <!-- ══════════════════════════════════
+         TAB 1: COUNTER PANEL
+    ══════════════════════════════════ -->
+    <div id="panel-counter" class="tab-panel active space-y-4">
+
+      <!-- Category selector -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-2 tracking-wide uppercase">
+          الفئة
+        </label>
+        <div id="category-pills" class="flex flex-wrap gap-2">
+          <!-- Pills rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Description input -->
+      <div>
+        <label for="session-description" class="block text-xs font-semibold text-slate-400 mb-2 tracking-wide uppercase">
+          وصف الجلسة
+        </label>
+        <textarea id="session-description"
+          rows="2"
+          placeholder="أضف ملاحظة أو وصفاً لهذه الجلسة..."
+          class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3
+                 text-sm text-slate-200 placeholder-slate-500 resize-none
+                 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50
+                 transition-all"></textarea>
+      </div>
+
+      <!-- ── COUNTER CARD ────────────────── -->
+      <div class="counter-glow rounded-2xl bg-slate-800/40 border border-slate-700/50 p-6">
+
+        <!-- Session label -->
+        <div class="flex items-center justify-between mb-6">
+          <p class="text-xs text-slate-500 font-medium">العداد الحالي</p>
+          <button id="btn-reset"
+            class="text-xs font-semibold text-slate-500 hover:text-red-400 transition-colors
+                   flex items-center gap-1"
+            aria-label="إعادة تعيين العداد">
+            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            إعادة تعيين
+          </button>
+        </div>
+
+        <!-- Counter Display -->
+        <div class="flex items-center justify-center mb-8">
+          <div id="counter-display"
+            class="text-8xl text-slate-100 select-none tabular-nums"
+            aria-live="polite"
+            aria-label="القيمة الحالية للعداد">
+            0
+          </div>
+        </div>
+
+        <!-- Increment / Decrement Buttons -->
+        <div class="flex items-center gap-4">
+          <!-- Decrement -->
+          <button id="btn-decrement"
+            class="btn-counter flex-1 h-16 rounded-xl border border-slate-700 bg-slate-800/80
+                   text-slate-300 font-bold text-2xl
+                   hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-400
+                   transition-all active:scale-95 select-none"
+            aria-label="تقليل العداد">
+            −
+          </button>
+
+          <!-- Increment -->
+          <button id="btn-increment"
+            class="btn-counter flex-1 h-16 rounded-xl border border-indigo-500/40 bg-indigo-500/10
+                   text-indigo-300 font-bold text-2xl
+                   hover:bg-indigo-500/20 hover:border-indigo-400/60 hover:text-indigo-200
+                   transition-all active:scale-95 select-none"
+            aria-label="زيادة العداد">
+            +
+          </button>
+        </div>
+      </div>
+
+      <!-- Step Size selector -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-500 font-medium whitespace-nowrap">الخطوة:</span>
+        <div class="flex gap-1.5">
+          <button class="step-btn active-step text-xs font-bold px-3 py-1.5 rounded-lg
+                         border border-indigo-500/40 bg-indigo-500/10 text-indigo-300
+                         hover:bg-indigo-500/20 transition-all" data-step="1">×1</button>
+          <button class="step-btn text-xs font-bold px-3 py-1.5 rounded-lg
+                         border border-slate-700 text-slate-400
+                         hover:border-slate-600 hover:text-slate-200 transition-all" data-step="5">×5</button>
+          <button class="step-btn text-xs font-bold px-3 py-1.5 rounded-lg
+                         border border-slate-700 text-slate-400
+                         hover:border-slate-600 hover:text-slate-200 transition-all" data-step="10">×10</button>
+        </div>
+      </div>
+
+      <!-- Save Session Button -->
+      <button id="btn-save"
+        class="w-full py-3.5 rounded-xl font-bold text-sm
+               bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700
+               text-white transition-all shadow-lg shadow-indigo-900/30
+               flex items-center justify-center gap-2"
+        aria-label="حفظ الجلسة">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+        </svg>
+        حفظ الجلسة
+      </button>
+
+      <!-- Toast notification -->
+      <div id="toast"
+        class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50
+               bg-slate-700 border border-slate-600 text-slate-100 text-sm font-semibold
+               px-5 py-3 rounded-xl shadow-2xl
+               opacity-0 pointer-events-none transition-all duration-300 translate-y-2"
+        role="status" aria-live="polite">
+      </div>
+
+    </div><!-- /panel-counter -->
+
+
+    <!-- ══════════════════════════════════
+         TAB 2: HISTORY PANEL
+    ══════════════════════════════════ -->
+    <div id="panel-history" class="tab-panel space-y-3">
+
+      <!-- History controls -->
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">الجلسات المحفوظة</p>
+        <button id="btn-clear-history"
+          class="text-xs font-semibold text-slate-500 hover:text-red-400 transition-colors flex items-center gap-1"
+          aria-label="مسح كل السجل">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+          مسح الكل
+        </button>
+      </div>
+
+      <!-- History list container -->
+      <div id="history-list" class="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+        <!-- Populated by JS -->
+      </div>
+
+      <!-- Empty state -->
+      <div id="empty-state" class="text-center py-16 hidden">
+        <div class="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto mb-4">
+          <svg class="w-7 h-7 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+          </svg>
+        </div>
+        <p class="text-slate-400 font-semibold text-sm">لا توجد جلسات محفوظة بعد</p>
+        <p class="text-slate-600 text-xs mt-1">احفظ جلستك الأولى من تبويب العداد</p>
+      </div>
+
+    </div><!-- /panel-history -->
+
+  </main>
+
+  <!-- History card template (hidden, cloned by JS) -->
+  <template id="history-card-template">
+    <article class="history-card bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 animate-slide-up">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span class="card-category text-[10px] font-bold px-2.5 py-0.5 rounded-full
+                         bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+            </span>
+            <time class="card-date text-[10px] text-slate-500 font-medium"></time>
+          </div>
+          <p class="card-description text-sm text-slate-300 leading-relaxed line-clamp-2 mt-1"></p>
+        </div>
+        <!-- Counter value -->
+        <div class="flex-shrink-0 text-right">
+          <div class="card-value font-mono font-bold text-2xl text-slate-100 leading-none tabular-nums"></div>
+          <p class="text-[10px] text-slate-500 mt-1">القيمة النهائية</p>
+        </div>
+      </div>
+      <!-- Delete btn -->
+      <div class="flex justify-end mt-3 pt-3 border-t border-slate-700/50">
+        <button class="btn-delete-card text-xs text-slate-500 hover:text-red-400 transition-colors flex items-center gap-1 font-medium">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+          حذف
+        </button>
+      </div>
+    </article>
+  </template>
+
+  <!-- App JS (compiled from TypeScript in Phase 2) -->
+  <script src="dist/app.js" defer></script>
+
+</body>
+</html>
