@@ -27,7 +27,7 @@ let currentCategory = "عام";
 
 let sessions: CounterSession[] = [];
 
-const categories = ["عام", "عمل", "دراسة", "رياضة", "عبادات", "أهداف"];
+const categories = ["عام", "رياضة", "أهداف"];
 
 // ============================================
 // DOM ELEMENTS
